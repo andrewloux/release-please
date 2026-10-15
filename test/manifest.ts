@@ -61,6 +61,7 @@ nock.disableNetConnect();
 
 const sandbox = sinon.createSandbox();
 const fixturesPath = './test/fixtures';
+const TARGET_SHA = '0123abcd';
 
 function mockPullRequests(
   github: GitHub,
@@ -162,6 +163,7 @@ describe('Manifest', () => {
       token: 'fake-token',
       fetch,
     });
+    sandbox.stub(github, 'getBranchSha').resolves(TARGET_SHA);
   });
   afterEach(() => {
     sandbox.restore();
@@ -3877,7 +3879,7 @@ describe('Manifest', () => {
     it('handles a single pull request', async function () {
       sandbox
         .stub(github, 'getFileContentsOnBranch')
-        .withArgs('README.md', 'main')
+        .withArgs('README.md', TARGET_SHA)
         .resolves(buildGitHubFileRaw('some-content'));
       stubSuggesterWithSnapshot(sandbox, this.test!.fullTitle());
       mockPullRequests(github, []);
@@ -4072,7 +4074,7 @@ describe('Manifest', () => {
     it('handles signoff users', async function () {
       sandbox
         .stub(github, 'getFileContentsOnBranch')
-        .withArgs('README.md', 'main')
+        .withArgs('README.md', TARGET_SHA)
         .resolves(buildGitHubFileRaw('some-content'));
       stubSuggesterWithSnapshot(sandbox, this.test!.fullTitle());
       mockPullRequests(github, []);
@@ -4138,7 +4140,7 @@ describe('Manifest', () => {
     it('handles fork = true', async function () {
       sandbox
         .stub(github, 'getFileContentsOnBranch')
-        .withArgs('README.md', 'main')
+        .withArgs('README.md', TARGET_SHA)
         .resolves(buildGitHubFileRaw('some-content'));
       stubSuggesterWithSnapshot(sandbox, this.test!.fullTitle());
       mockPullRequests(github, []);

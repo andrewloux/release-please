@@ -70,6 +70,7 @@ export class LocalGitHub implements Scm {
   private cloneDir: string;
   private gitHubApi: GitHubApi;
   private logger: Logger;
+  private pinned = new Map<string, string>();
 
   constructor(
     repository: Repository,
@@ -214,6 +215,38 @@ export class LocalGitHub implements Scm {
   }
 
   /**
+   * Fetch the commit SHA at the head of a branch in the local clone.
+   *
+   * @param {string} branch The branch name
+   * @returns {string} The commit SHA
+   */
+  async getBranchSha(branch: string): Promise<string> {
+    const ref = await this.ensureRef(branch);
+    const {stdout} = await execFile(
+      'git',
+      ['rev-parse', '--verify', `${ref}^{commit}`],
+      {cwd: this.cloneDir}
+    );
+    return stdout.trim();
+  }
+
+  /**
+   * Resolve every later read of a branch to one commit. Pinning a branch
+   * again replaces its SHA.
+   *
+   * @param {string} branch The branch name
+   * @param {string} sha The commit SHA that reads of the branch use
+   */
+  pinBranch(branch: string, sha: string): void {
+    this.logger.debug(`Pinning branch ${branch} to ${sha}`);
+    this.pinned.set(branch, sha);
+  }
+
+  private refFor(branch: string): string {
+    return this.pinned.get(branch) ?? branch;
+  }
+
+  /**
    * Fetch the contents of a file
    *
    * @param {string} path The path to the file in the repository
@@ -230,7 +263,7 @@ export class LocalGitHub implements Scm {
       `Fetching file contents for file ${path} on branch ${branch}`
     );
 
-    const ref = await this.ensureRef(branch);
+    const ref = await this.ensureRef(this.refFor(branch));
     const lsTreeResult = await execFile('git', ['ls-tree', ref, path], {
       cwd: this.cloneDir,
     });
@@ -311,7 +344,7 @@ export class LocalGitHub implements Scm {
 
     const treePath = normalizedPrefix ? `${normalizedPrefix}/` : '.';
 
-    const resolvedRef = await this.ensureRef(ref);
+    const resolvedRef = await this.ensureRef(this.refFor(ref));
     this.logger.trace(
       `Executing stream: git ls-tree -r --name-only ${resolvedRef} ${treePath}`
     );
@@ -388,7 +421,7 @@ export class LocalGitHub implements Scm {
 
     const treePath = normalizedPrefix ? `${normalizedPrefix}/` : '.';
 
-    const resolvedRef = await this.ensureRef(ref);
+    const resolvedRef = await this.ensureRef(this.refFor(ref));
     const files: string[] = [];
     const dirs = new Set<string>();
     await this.execGitStream(
@@ -482,7 +515,7 @@ export class LocalGitHub implements Scm {
 
     const treePath = normalizedPrefix ? `${normalizedPrefix}/` : '.';
 
-    const resolvedRef = await this.ensureRef(ref);
+    const resolvedRef = await this.ensureRef(this.refFor(ref));
     const matchedPaths: string[] = [];
     await this.execGitStream(
       ['ls-tree', '-r', '--name-only', resolvedRef, treePath],
@@ -566,7 +599,7 @@ export class LocalGitHub implements Scm {
       format += '%n---FILES_START---';
     }
 
-    const ref = await this.ensureRef(targetBranch);
+    const ref = await this.ensureRef(this.refFor(targetBranch));
     const args = ['log', ref, `--pretty=format:${format}`];
     if (backfillFiles) {
       args.push('--name-only');
@@ -737,7 +770,11 @@ export class LocalGitHub implements Scm {
     updates: Update[],
     options?: ScmCreatePullRequestOptions
   ): Promise<PullRequest> {
-    const changes = await this.buildChangeSet(updates, targetBranch);
+    const baseSha =
+      options?.baseSha ??
+      this.pinned.get(targetBranch) ??
+      (await this.getBranchSha(targetBranch));
+    const changes = await this.buildChangeSet(updates, baseSha);
     const prNumber = await suggesterCreatePullRequest(
       this.gitHubApi.octokit,
       changes,
@@ -748,6 +785,7 @@ export class LocalGitHub implements Scm {
         branch: pullRequest.headBranchName,
         description: pullRequest.body,
         primary: targetBranch,
+        baseSha,
         force: true,
         fork: !!options?.fork,
         message,
@@ -790,10 +828,11 @@ export class LocalGitHub implements Scm {
     targetBranch: string,
     options?: ScmUpdatePullRequestOptions
   ): Promise<PullRequest> {
-    const changes = await this.buildChangeSet(
-      pullRequest.updates,
-      targetBranch
-    );
+    const baseSha =
+      options?.baseSha ??
+      this.pinned.get(targetBranch) ??
+      (await this.getBranchSha(targetBranch));
+    const changes = await this.buildChangeSet(pullRequest.updates, baseSha);
     const message = pullRequest.title.toString();
     const title = pullRequest.title.toString();
     const body = (
@@ -814,6 +853,7 @@ export class LocalGitHub implements Scm {
         branch: pullRequest.headRefName,
         description: body,
         primary: targetBranch,
+        baseSha,
         force: true,
         fork: options?.fork === false ? false : true,
         message,
@@ -925,7 +965,7 @@ export class LocalGitHub implements Scm {
    * Given a set of proposed updates, build a changeset to suggest.
    *
    * @param {Update[]} updates The proposed updates
-   * @param {string} defaultBranch The target branch
+   * @param {string} defaultBranch The branch or commit SHA to read files from
    * @return {Changes} The changeset to suggest.
    * @throws {GitHubAPIError} on an API error
    */

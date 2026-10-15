@@ -140,6 +140,7 @@ export class GitHub implements Scm {
   private fileCache: RepositoryFileCache;
   private logger: Logger;
   private gitHubApi: GitHubApi;
+  private pinned = new Map<string, string>();
 
   private constructor(options: GitHubOptions) {
     this.repository = options.repository;
@@ -165,6 +166,44 @@ export class GitHub implements Scm {
       octokitAPIs: gitHubApi.octokitAPIs,
       logger: options.logger,
     });
+  }
+
+  /**
+   * Fetch the commit SHA at the head of a branch.
+   *
+   * @param {string} branch The branch name
+   * @returns {string} The commit SHA
+   * @throws {GitHubAPIError} on an API error
+   */
+  getBranchSha = wrapAsync(async (branch: string): Promise<string> => {
+    const {data} = await this.octokit.repos.getBranch({
+      owner: this.repository.owner,
+      repo: this.repository.repo,
+      branch,
+    });
+    this.logger.debug(`Branch ${branch} is at ${data.commit.sha}`);
+    return data.commit.sha;
+  });
+
+  /**
+   * Resolve every later read of a branch to one commit: file contents, file
+   * searches, the commit walk, and the base of a release pull request.
+   *
+   * Pinning a branch again replaces its SHA. A caller that reuses one GitHub
+   * instance for consecutive runs, such as a release pass followed by a pull
+   * request pass, pins at the start of each run, so each run reads the branch
+   * as it stands when that run starts.
+   *
+   * @param {string} branch The branch name
+   * @param {string} sha The commit SHA that reads of the branch use
+   */
+  pinBranch(branch: string, sha: string): void {
+    this.logger.debug(`Pinning branch ${branch} to ${sha}`);
+    this.pinned.set(branch, sha);
+  }
+
+  private refFor(branch: string): string {
+    return this.pinned.get(branch) ?? branch;
   }
 
   /**
@@ -246,11 +285,8 @@ export class GitHub implements Scm {
     this.logger.debug(
       `Fetching merge commits on branch ${targetBranch} with cursor: ${cursor}`
     );
-    const query = `query pullRequestsSince($owner: String!, $repo: String!, $num: Int!, $maxFilesChanged: Int, $targetBranch: String!, $cursor: String) {
-      repository(owner: $owner, name: $repo) {
-        ref(qualifiedName: $targetBranch) {
-          target {
-            ... on Commit {
+    const sha = this.pinned.get(targetBranch);
+    const commitHistory = `... on Commit {
               history(first: $num, after: $cursor) {
                 nodes {
                   associatedPullRequests(first: 10) {
@@ -294,7 +330,22 @@ export class GitHub implements Scm {
                   endCursor
                 }
               }
-            }
+            }`;
+    // object(oid:) walks from the run's pinned commit. ref(qualifiedName:)
+    // starts from wherever the branch points when the walk begins.
+    const query = sha
+      ? `query pullRequestsSince($owner: String!, $repo: String!, $num: Int!, $maxFilesChanged: Int, $sha: GitObjectID!, $cursor: String) {
+      repository(owner: $owner, name: $repo) {
+        object(oid: $sha) {
+          ${commitHistory}
+        }
+      }
+    }`
+      : `query pullRequestsSince($owner: String!, $repo: String!, $num: Int!, $maxFilesChanged: Int, $targetBranch: String!, $cursor: String) {
+      repository(owner: $owner, name: $repo) {
+        ref(qualifiedName: $targetBranch) {
+          target {
+            ${commitHistory}
           }
         }
       }
@@ -304,7 +355,7 @@ export class GitHub implements Scm {
       owner: this.repository.owner,
       repo: this.repository.repo,
       num: options.batchSize ?? 10,
-      targetBranch,
+      ...(sha ? {sha} : {targetBranch}),
       maxFilesChanged: 100, // max is 100
     };
     const response = await this.graphqlRequest({
@@ -321,13 +372,17 @@ export class GitHub implements Scm {
     }
 
     // if the branch does exist, return null
-    if (!response.repository?.ref) {
+    const history = sha
+      ? response.repository?.object?.history
+      : response.repository?.ref?.target.history;
+    if (!history) {
       this.logger.warn(
-        `Could not find commits for branch ${targetBranch} - it likely does not exist.`
+        sha
+          ? `Could not find commits for ${sha} on branch ${targetBranch} - it likely does not exist.`
+          : `Could not find commits for branch ${targetBranch} - it likely does not exist.`
       );
       return null;
     }
-    const history = response.repository.ref.target.history;
     const commits = (history.nodes || []) as GraphQLCommit[];
     // Count the number of pull requests associated with each merge commit. This is
     // used in the next step to make sure we only find pull requests with a
@@ -607,7 +662,7 @@ export class GitHub implements Scm {
   ): Promise<GitHubFileContents> {
     this.logger.debug(`Fetching ${path} from branch ${branch}`);
     try {
-      return await this.fileCache.getFileContents(path, branch);
+      return await this.fileCache.getFileContents(path, this.refFor(branch));
     } catch (e) {
       if (e instanceof MissingFileError) {
         throw new FileNotFoundError(path);
@@ -666,7 +721,11 @@ export class GitHub implements Scm {
       this.logger.debug(
         `finding files by filename: ${filename}, ref: ${ref}, prefix: ${prefix}`
       );
-      return await this.fileCache.findFilesByFilename(filename, ref, prefix);
+      return await this.fileCache.findFilesByFilename(
+        filename,
+        this.refFor(ref),
+        prefix
+      );
     }
   );
 
@@ -708,7 +767,11 @@ export class GitHub implements Scm {
       this.logger.debug(
         `finding files by glob: ${glob}, ref: ${ref}, prefix: ${prefix}`
       );
-      return await this.fileCache.findFilesByGlob(glob, ref, prefix);
+      return await this.fileCache.findFilesByGlob(
+        glob,
+        this.refFor(ref),
+        prefix
+      );
     }
   );
 
@@ -729,7 +792,13 @@ export class GitHub implements Scm {
     updates: Update[],
     options?: CreatePullRequestOptions
   ): Promise<PullRequest> {
-    const changes = await this.buildChangeSet(updates, targetBranch);
+    // Resolve the base before the first file read, so the file text, the new
+    // tree's base and the commit's parent all come from one commit.
+    const baseSha =
+      options?.baseSha ??
+      this.pinned.get(targetBranch) ??
+      (await this.getBranchSha(targetBranch));
+    const changes = await this.buildChangeSet(updates, baseSha);
     const prNumber = await suggesterCreatePullRequest(this.octokit, changes, {
       upstreamOwner: this.repository.owner,
       upstreamRepo: this.repository.repo,
@@ -737,6 +806,7 @@ export class GitHub implements Scm {
       branch: pullRequest.headBranchName,
       description: pullRequest.body,
       primary: targetBranch,
+      baseSha,
       force: true,
       fork: !!options?.fork,
       message,
@@ -780,6 +850,9 @@ export class GitHub implements Scm {
    *   a fork or not. Defaults to `false`
    * @param {PullRequestOverflowHandler} options.pullRequestOverflowHandler Optional.
    *   Handles extra large pull request body messages.
+   * @param {string} options.baseSha Optional. The commit to read files from and
+   *   to base the pushed commit on. Defaults to the pinned SHA of targetBranch,
+   *   else its head.
    */
   async updatePullRequest(
     number: number,
@@ -787,9 +860,13 @@ export class GitHub implements Scm {
     targetBranch: string,
     options?: ScmUpdatePullRequestOptions
   ): Promise<PullRequest> {
+    const baseSha =
+      options?.baseSha ??
+      this.pinned.get(targetBranch) ??
+      (await this.getBranchSha(targetBranch));
     const changes = await this.buildChangeSet(
       releasePullRequest.updates,
-      targetBranch
+      baseSha
     );
 
     let message = releasePullRequest.title.toString();
@@ -813,6 +890,7 @@ export class GitHub implements Scm {
       branch: releasePullRequest.headRefName,
       description: body,
       primary: targetBranch,
+      baseSha,
       force: true,
       fork: options?.fork === false ? false : true,
       message,
@@ -831,7 +909,7 @@ export class GitHub implements Scm {
    * Given a set of proposed updates, build a changeset to suggest.
    *
    * @param {Update[]} updates The proposed updates
-   * @param {string} defaultBranch The target branch
+   * @param {string} defaultBranch The branch or commit SHA to read files from
    * @return {Changes} The changeset to suggest.
    * @throws {GitHubAPIError} on an API error
    */
@@ -901,7 +979,11 @@ export class GitHub implements Scm {
       if (prefix) {
         prefix = normalizePrefix(prefix);
       }
-      return this.fileCache.findFilesByExtension(extension, ref, prefix);
+      return this.fileCache.findFilesByExtension(
+        extension,
+        this.refFor(ref),
+        prefix
+      );
     }
   );
 

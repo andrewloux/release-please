@@ -117,6 +117,7 @@ export async function createBranch(
  * @param {RepoDomain} upstream The domain information of the remote upstream repository
  * @param {string} name The branch name to create on the origin repository
  * @param {string} baseBranch the name of the branch to base the new branch off of. Default is main
+ * @param {string} baseSha Optional. The commit to base the new branch on. When set, the HEAD of baseBranch is not read
  * @returns {Promise<string>} the base SHA for subsequent commits to be based off for the origin branch
  */
 export async function branch(
@@ -124,11 +125,12 @@ export async function branch(
   origin: RepoDomain,
   upstream: RepoDomain,
   name: string,
-  baseBranch: string = DEFAULT_PRIMARY_BRANCH
+  baseBranch: string = DEFAULT_PRIMARY_BRANCH,
+  baseSha?: string
 ): Promise<string> {
-  // create branch from primary branch HEAD SHA
+  // create branch from the given commit, else from primary branch HEAD SHA
   try {
-    const baseSha = await getBranchHead(octokit, upstream, baseBranch);
+    baseSha ??= await getBranchHead(octokit, upstream, baseBranch);
     const duplicate: boolean = await existsBranchWithName(
       octokit,
       origin,
