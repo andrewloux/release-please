@@ -1014,6 +1014,9 @@ describe('GitHub', () => {
 
   describe('createPullRequest', () => {
     it('should not call getPullRequest when no code changes detected', async () => {
+      req = req
+        .get('/repos/fake/fake/branches/main')
+        .reply(200, {commit: {sha: 'abc123'}});
       const createPullRequestStub = sandbox
         .stub(codeSuggester, 'createPullRequest')
         .resolves(0);
@@ -1184,6 +1187,9 @@ describe('GitHub', () => {
 
   describe('updatePullRequest', () => {
     it('handles a PR body that is too big', async () => {
+      req = req
+        .get('/repos/fake/fake/branches/main')
+        .reply(200, {commit: {sha: 'abc123'}});
       req = req.patch('/repos/fake/fake/pulls/123').reply(200, {
         number: 123,
         title: 'updated-title',

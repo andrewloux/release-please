@@ -93,6 +93,8 @@ export interface CreatePullRequestUserOptions extends CreateCommitOptions {
   fork?: boolean;
   // Primary upstream branch to open PRs against. Default is 'main' (optional)
   primary?: string;
+  // Commit to base the pushed branch on. When set, the primary branch HEAD is not read. (optional)
+  baseSha?: string;
   // Whether or not maintainers can modify the PR. Default is true. (optional)
   maintainersCanModify?: boolean;
   // The list of labels to apply to the newly created PR. Default is empty. (optional)

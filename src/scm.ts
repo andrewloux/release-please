@@ -46,12 +46,14 @@ export interface ScmTagIteratorOptions {
 export interface ScmCreatePullRequestOptions {
   fork?: boolean;
   draft?: boolean;
+  baseSha?: string;
 }
 
 export interface ScmUpdatePullRequestOptions {
   signoffUser?: string;
   fork?: boolean;
   pullRequestOverflowHandler?: PullRequestOverflowHandler;
+  baseSha?: string;
 }
 
 export interface ScmReleaseOptions {
@@ -79,6 +81,8 @@ export interface ScmTag {
 export interface Scm {
   readonly repository: Repository;
 
+  getBranchSha(branch: string): Promise<string>;
+  pinBranch(branch: string, sha: string): void;
   getFileContents(path: string): Promise<GitHubFileContents>;
   getFileContentsOnBranch(
     path: string,

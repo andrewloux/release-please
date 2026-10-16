@@ -111,7 +111,8 @@ async function createPullRequest(
         origin,
         upstream,
         originBranch.branch,
-        gitHubConfigs.primary
+        gitHubConfigs.primary,
+        options.baseSha
       ),
     {
       retries: options.retry,

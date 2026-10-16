@@ -39,6 +39,7 @@ import {
   DuplicateReleaseError,
   FileNotFoundError,
   ConfigurationError,
+  GitHubAPIError,
 } from './errors';
 import {ManifestPlugin} from './plugin';
 import {
@@ -441,6 +442,7 @@ export class Manifest {
     path?: string,
     releaseAs?: string
   ): Promise<Manifest> {
+    await pinTargetBranch(github, targetBranch);
     const [
       {config: repositoryConfig, options: manifestOptions},
       releasedVersions,
@@ -495,6 +497,7 @@ export class Manifest {
     manifestOptions?: ManifestOptions,
     path: string = ROOT_PROJECT_PATH
   ): Promise<Manifest> {
+    await pinTargetBranch(github, targetBranch);
     const repositoryConfig: RepositoryConfig = {};
     repositoryConfig[path] = config;
     const strategy = await buildStrategy({
@@ -1810,6 +1813,23 @@ function hasAllLabels(expected: string[], existing: string[]): boolean {
     }
   }
   return true;
+}
+
+// Pin the branch before the first read, so a push that lands mid-run cannot
+// split the run's reads across two commits. A branch that does not exist
+// stays unpinned, and the reads that follow report it as they did before.
+async function pinTargetBranch(github: Scm, targetBranch: string) {
+  try {
+    github.pinBranch(targetBranch, await github.getBranchSha(targetBranch));
+  } catch (e) {
+    if (e instanceof GitHubAPIError && e.status === 404) {
+      defaultLogger.warn(
+        `Could not find branch ${targetBranch} - it likely does not exist.`
+      );
+      return;
+    }
+    throw e;
+  }
 }
 
 function commitsAfterSha(commits: Commit[], lastReleaseSha: string) {

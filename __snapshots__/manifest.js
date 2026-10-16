@@ -209,6 +209,7 @@ Some release notes
 ---
 This PR was generated with [Release Please](https://github.com/googleapis/release-please). See [documentation](https://github.com/googleapis/release-please#release-please).
 primary: main
+baseSha: 0123abcd
 force: true
 fork: false
 message: chore(main): release
@@ -238,6 +239,7 @@ Some release notes
 ---
 This PR was generated with [Release Please](https://github.com/googleapis/release-please). See [documentation](https://github.com/googleapis/release-please#release-please).
 primary: main
+baseSha: 0123abcd
 force: true
 fork: true
 message: chore(main): release
@@ -267,6 +269,7 @@ Some release notes
 ---
 This PR was generated with [Release Please](https://github.com/googleapis/release-please). See [documentation](https://github.com/googleapis/release-please#release-please).
 primary: main
+baseSha: 0123abcd
 force: true
 fork: false
 message: chore(main): release
