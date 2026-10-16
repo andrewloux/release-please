@@ -22,6 +22,10 @@ Options:
                               [deprecated: use --target-branch instead] [string]
   --target-branch               The branch to open release PRs against and tag
                                 releases on                             [string]
+  --target-branch-sha           Pin every read of the target branch to this
+                                commit for the whole run. Must be on the branch.
+                                Defaults to the branch head when the run starts
+                                                                        [string]
   --repo-url                    GitHub URL to generate release for    [required]
   --dry-run                     Prepare but do not take action
                                                       [boolean] [default: false]
@@ -102,6 +106,9 @@ Options:
                         on    [deprecated: use --target-branch instead] [string]
   --target-branch       The branch to open release PRs against and tag releases
                         on                                              [string]
+  --target-branch-sha   Pin every read of the target branch to this commit for
+                        the whole run. Must be on the branch. Defaults to the
+                        branch head when the run starts                 [string]
   --repo-url            GitHub URL to generate release for            [required]
   --dry-run             Prepare but do not take action[boolean] [default: false]
   --local               Whether to use local clone    [boolean] [default: false]
@@ -148,6 +155,9 @@ Options:
                         on    [deprecated: use --target-branch instead] [string]
   --target-branch       The branch to open release PRs against and tag releases
                         on                                              [string]
+  --target-branch-sha   Pin every read of the target branch to this commit for
+                        the whole run. Must be on the branch. Defaults to the
+                        branch head when the run starts                 [string]
   --repo-url            GitHub URL to generate release for            [required]
   --dry-run             Prepare but do not take action[boolean] [default: false]
   --local               Whether to use local clone    [boolean] [default: false]
@@ -201,6 +211,10 @@ Options:
                               [deprecated: use --target-branch instead] [string]
   --target-branch                   The branch to open release PRs against and
                                     tag releases on                     [string]
+  --target-branch-sha               Pin every read of the target branch to this
+                                    commit for the whole run. Must be on the
+                                    branch. Defaults to the branch head when the
+                                    run starts                          [string]
   --repo-url                        GitHub URL to generate release for[required]
   --dry-run                         Prepare but do not take action
                                                       [boolean] [default: false]
@@ -290,7 +304,3 @@ Options:
                                     project?
                                       [default: ".release-please-manifest.json"]
 `
-
-exports['CLI handleError handles an error 1'] = [
-  "command foobar failed with status 404"
-]

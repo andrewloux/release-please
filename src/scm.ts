@@ -82,6 +82,7 @@ export interface Scm {
   readonly repository: Repository;
 
   getBranchSha(branch: string): Promise<string>;
+  branchContains(branch: string, sha: string): Promise<boolean>;
   pinBranch(branch: string, sha: string): void;
   getFileContents(path: string): Promise<GitHubFileContents>;
   getFileContentsOnBranch(

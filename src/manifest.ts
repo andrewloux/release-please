@@ -200,6 +200,7 @@ interface ReleaserConfigJson {
 export interface ManifestOptions {
   bootstrapSha?: string;
   lastReleaseSha?: string;
+  targetBranchSha?: string;
   alwaysLinkLocal?: boolean;
   separatePullRequests?: boolean;
   plugins?: PluginType[];
@@ -349,6 +350,9 @@ export class Manifest {
    * @param {ManifestOptions} manifestOptions Optional. Manifest options
    * @param {string} manifestOptions.bootstrapSha If provided, use this SHA
    *   as the point to consider commits after
+   * @param {string} manifestOptions.targetBranchSha If provided, pin every
+   *   read of the target branch to this commit. It must be on the branch.
+   *   Defaults to the branch head when the run starts.
    * @param {boolean} manifestOptions.alwaysLinkLocal Option for the node-workspace
    *   plugin
    * @param {boolean} manifestOptions.updatePeerDependencies Option for the node-workspace
@@ -442,7 +446,11 @@ export class Manifest {
     path?: string,
     releaseAs?: string
   ): Promise<Manifest> {
-    await pinTargetBranch(github, targetBranch);
+    await pinTargetBranch(
+      github,
+      targetBranch,
+      manifestOptionOverrides.targetBranchSha
+    );
     const [
       {config: repositoryConfig, options: manifestOptions},
       releasedVersions,
@@ -473,6 +481,9 @@ export class Manifest {
    * @param {ManifestOptions} manifestOptions Optional. Manifest options
    * @param {string} manifestOptions.bootstrapSha If provided, use this SHA
    *   as the point to consider commits after
+   * @param {string} manifestOptions.targetBranchSha If provided, pin every
+   *   read of the target branch to this commit. It must be on the branch.
+   *   Defaults to the branch head when the run starts.
    * @param {boolean} manifestOptions.alwaysLinkLocal Option for the node-workspace
    *   plugin
    * @param {boolean} manifestOptions.updatePeerDependencies Option for the node-workspace
@@ -497,7 +508,11 @@ export class Manifest {
     manifestOptions?: ManifestOptions,
     path: string = ROOT_PROJECT_PATH
   ): Promise<Manifest> {
-    await pinTargetBranch(github, targetBranch);
+    await pinTargetBranch(
+      github,
+      targetBranch,
+      manifestOptions?.targetBranchSha
+    );
     const repositoryConfig: RepositoryConfig = {};
     repositoryConfig[path] = config;
     const strategy = await buildStrategy({
@@ -1816,10 +1831,26 @@ function hasAllLabels(expected: string[], existing: string[]): boolean {
 }
 
 // Pin the branch before the first read, so a push that lands mid-run cannot
-// split the run's reads across two commits. A branch that does not exist
-// stays unpinned, and the reads that follow report it as they did before.
-async function pinTargetBranch(github: Scm, targetBranch: string) {
+// split the run's reads across two commits. A caller that already knows the
+// commit passes it as `sha`; it has to be on the branch, or the release
+// commit would carry every commit between the two. A branch that does not
+// exist stays unpinned, and the reads that follow report it as they did
+// before.
+async function pinTargetBranch(
+  github: Scm,
+  targetBranch: string,
+  sha?: string
+) {
   try {
+    if (sha) {
+      if (!(await github.branchContains(targetBranch, sha))) {
+        throw new Error(
+          `targetBranchSha ${sha} is not on branch ${targetBranch}`
+        );
+      }
+      github.pinBranch(targetBranch, sha);
+      return;
+    }
     github.pinBranch(targetBranch, await github.getBranchSha(targetBranch));
   } catch (e) {
     if (e instanceof GitHubAPIError && e.status === 404) {

@@ -17,6 +17,7 @@ These options are available on all commands.
 | `--api-url` | string | Base URI for making REST API requests. Defaults to `https://api.github.com` |
 | `--graphql-url` | string | Base URI for making GraphQL requests. Defaults to `https://api.github.com` |
 | `--target-branch` | string |The branch to open release PRs against and tag releases on. Defaults to the default branch of the repository |
+| `--target-branch-sha` | string | Pin every read of the target branch to this commit for the whole run. Must be on the branch. Defaults to the branch head when the run starts |
 | `--dry-run` | boolean | If set, reports the activity that would happen without taking effect |
 | `--debug` | boolean | If set, sets log level to >=DEBUG |
 | `--trace` | boolean | If set, sets log level to >=TRACE |

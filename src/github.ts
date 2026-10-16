@@ -186,6 +186,24 @@ export class GitHub implements Scm {
   });
 
   /**
+   * Whether a commit is on a branch: the branch head is that commit or
+   * descends from it.
+   *
+   * @param {string} branch The branch name
+   * @param {string} sha The commit SHA
+   */
+  branchContains = wrapAsync(
+    async (branch: string, sha: string): Promise<boolean> => {
+      const {data} = await this.octokit.repos.compareCommitsWithBasehead({
+        owner: this.repository.owner,
+        repo: this.repository.repo,
+        basehead: `${sha}...${branch}`,
+      });
+      return data.status === 'identical' || data.status === 'ahead';
+    }
+  );
+
+  /**
    * Resolve every later read of a branch to one commit: file contents, file
    * searches, the commit walk, and the base of a release pull request.
    *

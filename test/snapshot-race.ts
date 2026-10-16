@@ -379,6 +379,13 @@ function wireManifestRun(
     .optionally()
     .times(4)
     .reply(200, () => ({name: 'main', commit: {sha: repo.mainSha}}));
+  // The ancestry check for a caller-supplied targetBranchSha.
+  api
+    .get(/\/repos\/fake\/fake\/compare\/[^.]+\.\.\.main$/)
+    .optionally()
+    .reply(200, uri => ({
+      status: uri.includes('/compare/stray...') ? 'diverged' : 'ahead',
+    }));
   api
     .get(/\/repos\/fake\/fake\/git\/trees\/[^/?]+$/)
     .query(true)
@@ -564,6 +571,42 @@ describe('snapshot race through Manifest', () => {
     expectOneCommit(writes, 'before');
     expect(writes.createdRef).to.eql('before');
     expect(writes.commitWalks).lengthOf(2);
+  });
+
+  it('pins every read to targetBranchSha even when main already moved', async () => {
+    const repo = manifestRepo();
+    repo.mainSha = 'after';
+    const writes = newRunWrites();
+    wireManifestRun(repo, writes);
+
+    const manifest = await Manifest.fromManifest(
+      github,
+      'main',
+      undefined,
+      undefined,
+      {targetBranchSha: 'before'}
+    );
+    const pullRequests = await manifest.createPullRequests();
+
+    expect(pullRequests.map(pullRequest => pullRequest?.number)).to.eql([22]);
+    expectOneCommit(writes, 'before');
+  });
+
+  it('rejects a targetBranchSha that is not on the target branch', async () => {
+    const repo = manifestRepo();
+    wireManifestRun(repo, newRunWrites());
+
+    let error: Error | undefined;
+    try {
+      await Manifest.fromManifest(github, 'main', undefined, undefined, {
+        targetBranchSha: 'stray',
+      });
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error?.message).to.eql(
+      'targetBranchSha stray is not on branch main'
+    );
   });
 
   it('force-pushes an open release pull request onto the commit before the push', async () => {

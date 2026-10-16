@@ -56,6 +56,8 @@ interface GitHubArgs {
   localPath?: string;
   localCloneDepth?: number;
 
+  targetBranchSha?: string;
+
   // deprecated in favor of targetBranch
   defaultBranch?: string;
   targetBranch?: string;
@@ -182,6 +184,11 @@ function gitHubOptions(yargs: yargs.Argv): yargs.Argv {
     })
     .option('target-branch', {
       describe: 'The branch to open release PRs against and tag releases on',
+      type: 'string',
+    })
+    .option('target-branch-sha', {
+      describe:
+        'Pin every read of the target branch to this commit for the whole run. Must be on the branch. Defaults to the branch head when the run starts',
       type: 'string',
     })
     .option('repo-url', {
@@ -922,6 +929,9 @@ function extractManifestOptions(
   argv: GitHubArgs & (PullRequestArgs | ReleaseArgs)
 ): ManifestOptions {
   const manifestOptions: ManifestOptions = {};
+  if (argv.targetBranchSha) {
+    manifestOptions.targetBranchSha = argv.targetBranchSha;
+  }
   if ('fork' in argv && argv.fork !== undefined) {
     manifestOptions.fork = argv.fork;
   }

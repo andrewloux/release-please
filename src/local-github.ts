@@ -237,6 +237,18 @@ export class LocalGitHub implements Scm {
    * @param {string} branch The branch name
    * @param {string} sha The commit SHA that reads of the branch use
    */
+  async branchContains(branch: string, sha: string): Promise<boolean> {
+    const ref = await this.ensureRef(branch);
+    try {
+      await execFile('git', ['merge-base', '--is-ancestor', sha, ref], {
+        cwd: this.cloneDir,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   pinBranch(branch: string, sha: string): void {
     this.logger.debug(`Pinning branch ${branch} to ${sha}`);
     this.pinned.set(branch, sha);
